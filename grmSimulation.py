@@ -37,27 +37,29 @@ def simulate():
     '''
     # Process initFile.
     initDict = grmReader.read()
-    
-    ''' Set random seed
-    '''
-    np.random.seed(123)
 
     ''' Distribute parametrization and (limited) type conversions.
     '''
-    numAgents = initDict['numAgents']
-    fileName  = initDict['fileName']
+    numAgents  = initDict['numAgents']
+    fileName   = initDict['fileName']
     
-    Y1_beta   = np.array(initDict['Y1_beta'])
-    Y0_beta   = np.array(initDict['Y0_beta'])
+    Y1_beta    = np.array(initDict['Y1_beta'])
+    Y0_beta    = np.array(initDict['Y0_beta'])
     
-    D_gamma   = np.array(initDict['D_gamma'])
+    D_gamma    = np.array(initDict['D_gamma'])
     
-    U1_var    = initDict['U1_var'] 
-    U0_var    = initDict['U0_var'] 
-    V_var     = initDict['V_var']
+    U1_var     = initDict['U1_var'] 
+    U0_var     = initDict['U0_var'] 
+    V_var      = initDict['V_var']
     
-    U1V_rho   = initDict['U1V_rho']  
-    U0V_rho   = initDict['U0V_rho']  
+    U1V_rho    = initDict['U1V_rho']  
+    U0V_rho    = initDict['U0V_rho']  
+    
+    randomSeed = initDict['randomSeed']  
+    
+    ''' Set random seed
+    '''
+    np.random.seed(randomSeed)
     
     ''' Construct auxiliary objects.
     '''

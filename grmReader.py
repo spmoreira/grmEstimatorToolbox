@@ -67,7 +67,7 @@ def _read():
     
     with open('grmInit.ini', 'r') as file_:
         
-        for count in range(30):
+        for count in range(35):
             
             str_ = file_.readline()
             
@@ -160,7 +160,14 @@ def _read():
                 str_ = _processLine(str_)
 
                 dict_['maxiter'] = int(str_[0])   
-    
+
+            # Maximum Number of Iterations          
+            if(count == 32):
+                
+                str_ = _processLine(str_)
+
+                dict_['randomSeed'] = int(str_[0])   
+                    
     # Finishing.
     return dict_
 
