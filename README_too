@@ -1,0 +1,18 @@
+Please find attached two python codes: (1) estimates treatment effects 
+without parallel execution, (2) estimates treatment effects using
+pararell execution. 
+
+The current version needs to be improved. 
+I first tried to launch a MPI-parallel run with let say 10 processes,
+where process 0 keeps tracks of the big array, but also contributes 
+with the computation, and the other 7 processes send/recv to/from process 0. 
+I tried to replicate  "demo/mandelbrot/mandelbrot.py" without sucess.
+
+I then changed my approach. I currently read the data and dictionaries in 
+all processors (which I suppose it is not very efficient), and then use
+processor 1 (rank 0) to compute the final results.
+
+
+
+
+
