@@ -1,120 +1,97 @@
 '''
-    _____________________________________________________________
-    
     This module is an extension of the Generalized Roy Toolbox
     by  Philipp Eisenhauer and Stefano Mosso (Copyright 2013)
     
-    It was created to follow a coding structure similar to 
-    the original toolbox.  
+    It computes average treatment effects: ATE, TT, TUT
     
-    The module generates simulated data (in parallel)
-    and computes average treatment effects (ATE, TT, TUT)
-    
-    This is also the final exam in Computation Econometrics 
-    by Sara Moreira
-    ___________________________________________________________
-    
-    The public function treatmentEffects is Public interface to 
-    request an estimation of TE using the Generalized Roy Model.
+    No parallel version
 
-    To launch a MPI-parallel run with 10 processes:
-         mpiexec -n 10 python grmTreatmentEffectsSM.py 
-
-''' 
+'''
 
 import os.path
 import sys
 import json
-import random
 
 import  numpy as np
 
-from mpi4py import MPI
+# project library
+import grmReader
 
-comm = MPI.COMM_WORLD
-size = comm.Get_size()
-rank = comm.Get_rank()
-   
-'''' Public Interface.
+''' Public Interface.
 '''
-
-def treatmentEffects(numAgentsSim=1000): 
-    # "numAgentSim" is the number of observations simulated in each processor
-    
-    ''' Read estimated parameters
+def treatmentEffects():
+    ''' Public interface to request an estimation of TE using the Generalized
+        Roy Model.
     '''
+    
+    # Checks.
     assert (os.path.exists('grmRslt.json')) 
-    resultsDict =  open('grmRslt.json').read()
-    resultsDict =  json.loads(resultsDict)
-       
+    
+    # Process initialization file.
+    initDict = grmReader.read()
+    
+    # Checks.
+    assert (os.path.exists(initDict['fileName'])) 
+    
+    # Process initFile.
+    #_initializeLogging()
+    
+    ''' Distribute useful covariates.
+    '''
+    
     ''' Distribute parametrization and (limited) type conversions.
     '''
-    numAgents  = resultsDict['numAgents']
-    fileName   = resultsDict['fileName']
+    numAgents  = initDict['numAgents']
+    fileName   = initDict['fileName']
     
-    Y1_beta    = np.array(resultsDict['Y1_beta'])
-    Y0_beta    = np.array(resultsDict['Y0_beta'])
+    Y1_beta    = np.array(initDict['Y1_beta'])
+    Y0_beta    = np.array(initDict['Y0_beta'])
     
-    D_gamma    = np.array(resultsDict['D_gamma'])
+    D_gamma    = np.array(initDict['D_gamma'])
     
-    U1_var     = resultsDict['U1_var'] 
-    U0_var     = resultsDict['U0_var'] 
-    V_var      = resultsDict['V_var']
+    U1_var     = initDict['U1_var'] 
+    U0_var     = initDict['U0_var'] 
+    V_var      = initDict['V_var']
     
-    U1V_rho    = resultsDict['U1V_rho']  
-    U0V_rho    = resultsDict['U0V_rho']  
+    U1V_rho    = initDict['U1V_rho']  
+    U0V_rho    = initDict['U0V_rho']  
     
-    randomSeed = resultsDict['randomSeed']  
-             
-    ''' Set random seed.
+    randomSeed = initDict['randomSeed']  
+    
+    ''' Set random seed
     '''
     np.random.seed(randomSeed)
-        
-    '''Construct auxiliary objects.
+  
+    
+    ''' Construct auxiliary objects.
+
     '''
     numCovarsOut  = Y1_beta.shape[0]
     numCovarsCost = D_gamma.shape[0]
-        
+    
     U1V_cov      = U1V_rho*np.sqrt(U1_var)*np.sqrt(V_var)
     U0V_cov      = U0V_rho*np.sqrt(U0_var)*np.sqrt(V_var)
-        
-    ''' Reading "observed" Data.
-    '''
-    data =  np.genfromtxt(resultsDict['fileName'], dtype = 'float')
     
-    '''Debugging and Checks.
+    
+    ''' Read and check dataset, distribute entries.
     '''
-    assert (isinstance(data, np.ndarray))
-    assert (isinstance(numAgents, int))
-    assert (numAgents > 0)
-    assert (isinstance(numCovarsOut, int))
-    assert (numCovarsOut > 0)
-    assert (isinstance(numCovarsCost, int))
-    assert (numCovarsCost > 0)
+    data = np.genfromtxt(initDict['fileName'], dtype = 'float')
 
-    assert (data.shape == (numAgents, (1 + 1 + numCovarsOut +  numCovarsCost))) 
-    assert (np.all(np.isfinite(data)))
-    assert ((data[:,1].all() in [1.0, 0.0]))
+    assert (_checkData(data, numAgents, numCovarsOut, numCovarsCost) == True)
     
-         
-    ''' Randomly draw individuals into different processors.
-    '''
-    random.jumpahead(rank)  
-    processor  = random.choice  # choose a random element
-        
-    dataSim = [processor(data) for _ in xrange(numAgentsSim)]   # Create data
-    dataSim = np.reshape(dataSim,(numAgentsSim,(1 + 1 + numCovarsOut +  numCovarsCost)))
+    #Y = data[:,0]
+    #D = data[:,1]
+    
+    X = data[:,2:(numCovarsOut + 2)]
+    Z = data[:,-numCovarsCost:]
     
     ''' Construct level indicators for outcomes and choices. 
     '''
-    X = dataSim[:,2:(numCovarsOut + 2)]
-    Z = dataSim[:,-numCovarsCost:]
-    
     Y1_level = np.dot(Y1_beta, X.T)
     Y0_level = np.dot(Y0_beta, X.T)
     D_level  = np.dot(D_gamma, Z.T)
     
-    ''' Simulate unobservables from the model using estimated parameters
+    ''' Simulate unobservables from the model.
     '''
     means = np.tile(0.0, 3)
     vars_ = [U1_var, U0_var, V_var]
@@ -127,99 +104,101 @@ def treatmentEffects(numAgentsSim=1000):
     covs[1,2] = U0V_cov
     covs[2,1] = covs[1,2]
     
-    U = np.random.multivariate_normal(means, covs, numAgentsSim)
+    U = np.random.multivariate_normal(means, covs, numAgents)
     
     ''' Simulate individual outcomes and choices.
     '''
-    # Unobservables
-    U1 = U[:,0]
-    U0 = U[:,1]
-    V  = U[:,2]
+    Y1 = np.tile(np.nan, (numAgents))
+    Y0 = np.tile(np.nan, (numAgents))
+    Y  = np.tile(np.nan, (numAgents))
     
-    # Potential outcomes.
-    Y1 = Y1_level + U1
-    Y0 = Y0_level + U0
+    D  = np.tile(np.nan, (numAgents))
     
-    # Some calculations outside the loop
-    expectedBenefits = Y1_level - Y0_level
-
-    # Decision Rule.
-    cost = D_level  + V     
-    D = np.array((expectedBenefits - cost > 0), float)
+    for i in range(numAgents):
         
-    # Observed outcomes.
-    Y  = D*Y1 + (1.0 - D)*Y0
-
-    ''' Check quality of simulated sample.
+        # Distribute unobservables.
+        U1 = U[i,0]
+        U0 = U[i,1]
+        V  = U[i,2]
+    
+        # Decision Rule.
+        expectedBenefits = Y1_level[i] - Y0_level[i]
+        cost             = D_level[i]  + V 
+        
+        D[i] = np.float((expectedBenefits - cost > 0))
+        
+        # Potential outcomes.
+        Y1[i] = Y1_level[i] + U1
+        Y0[i] = Y0_level[i] + U0
+    
+    
+    ''' Check quality of simulated sample. 
     '''
     assert (np.all(np.isfinite(Y1)))
     assert (np.all(np.isfinite(Y0)))
     
-    assert (np.all(np.isfinite(Y)))
     assert (np.all(np.isfinite(D)))
     
-    assert (Y1.shape == (numAgentsSim, ))
-    assert (Y0.shape == (numAgentsSim, ))
-    
-    assert (Y.shape  == (numAgentsSim, ))
-    assert (D.shape  == (numAgentsSim, ))
+    assert (Y1.shape == (numAgents, ))
+    assert (Y0.shape == (numAgents, ))
+
+    assert (D.shape  == (numAgents, ))
     
     assert (Y1.dtype == 'float')
     assert (Y0.dtype == 'float')
     
-    assert (Y.dtype == 'float')
+    assert ((D.all() in [1.0, 0.0]))    
     
-    assert ((D.all() in [1.0, 0.0]))
-
-    ''' Defining the average treatment effects
+    ''' Compute average treatment effects using the simulation approach
     '''
-    Dmean = np.mean(D)
-    D1sim    = np.int(np.sum(D))
     
-    assert (0.0 <Dmean < 1.0) 
+    ATE = np.mean(Y1-Y0)
     
-    ATEsim  = np.mean(a=Y1-Y0)
-    ATTsim  = np.average(a=Y1-Y0, weights = D)
-    ATUTsim = np.average(a=Y1-Y0, weights = 1-D)
+    Dmean   = np.mean(D)
     
-    output = [numAgentsSim,D1sim,ATEsim,ATTsim,ATUTsim]
+    ATT = np.average(a=Y1-Y0,weights= D)
     
-    ''' Consistency checks and quality checks
+    ATUT = np.average(a=Y1-Y0,weights= 1-D)
+    
+    print 'D', D
+    
+    print "The average treatment effect is", ATE
+    print "The average treatment effect on the treated is", ATT
+    print "The average treatment effect on the untreated is", ATUT
+    
+    '''Check
     '''
-    check = ATEsim -(ATTsim*Dmean + ATUTsim*(1-Dmean))
+    check = ATE-(ATT*Dmean+ATUT*(1-Dmean))
     assert (check < 0.00001)
     
-    assert(isinstance(D1sim,int))
-    assert(isinstance(ATEsim,float))
-    assert(isinstance(ATTsim,float))
-    assert(isinstance(ATUTsim,float))
-     
-    ''' Exporting the individual estimates and weighting
-    '''
-    #results = comm.allgather(output)
-    results = comm.gather(output, root=0)  
+
+''' Private Functions
+'''
     
-    if rank==0: # Processor 1 (rank 0) will compile the estimates
+def _checkData(data, numAgents, numCovarsOut, numCovarsCost):
+    ''' Basic checks for the data.
+    
+    '''
+    # Antibugging.
+    assert (isinstance(data, np.ndarray))
+    assert (isinstance(numAgents, int))
+    assert (numAgents > 0)
+    assert (isinstance(numCovarsOut, int))
+    assert (numCovarsOut > 0)
+    assert (isinstance(numCovarsCost, int))
+    assert (numCovarsCost > 0)
         
-        results = np.asarray(results)
-        np.savetxt('grmTESim.dat', np.column_stack((rank,numAgentsSim,D1sim,ATEsim,ATTsim,ATUTsim)), fmt= '%8.3f')
-         
-        ATE  = np.average(a=(results[:,2]), weights = (results[:,0]))
-        ATT  = np.average(a=(results[:,3]), weights = (results[:,1]))
-        ATUT = np.average(a=(results[:,4]), weights = ((results[:,0])-results[:,1]))
-        
-        Dict= {}
-        Dict['ATE'] = ATE
-        Dict['ATT']  = ATT
-        Dict['ATUT'] = ATUT
-        
-        with open('grmTE.json', 'w') as file_:
-           
-            json.dump(Dict, file_)
-            
-           
+    # Checks.
+    assert (data.shape == (numAgents, (1 + 1 + numCovarsOut +  numCovarsCost))) 
+    assert (np.all(np.isfinite(data)))
+    assert ((data[:,1].all() in [1.0, 0.0]))
+    
+    # Finishing.
+    return True
+    
+    
 ''' Executable.
 '''
-if __name__ == '__main__':       
-
+if __name__ == '__main__':
+    
     treatmentEffects()
